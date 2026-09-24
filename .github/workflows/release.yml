@@ -1,0 +1,227 @@
+name: Build Windows FX release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to package, e.g. v0.1.0"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build-release:
+    name: Validate, package and publish
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up build Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13.15"
+
+      - name: Validate source project
+        run: python scripts/validate_project.py
+
+      - name: Resolve version
+        id: version
+        shell: pwsh
+        run: |
+          if ("${{ github.event_name }}" -eq "workflow_dispatch") {
+            $version = "${{ inputs.version }}"
+          } else {
+            $version = "${{ github.ref_name }}"
+          }
+
+          if ($version -notmatch '^v\d+\.\d+\.\d+$') {
+            throw "Version must match vMAJOR.MINOR.PATCH, for example v0.1.0"
+          }
+
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "version_number=$($version.TrimStart('v'))" >> $env:GITHUB_OUTPUT
+
+      - name: Build self-contained portable runtime
+        id: portable
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          $pythonVersion = "3.13.15"
+          $pythonSha256 = "d1f04d990aee1253d8569e8e5104e30fa9f5fa830899f14843448872d936a2cf"
+          $pythonUrl = "https://www.python.org/ftp/python/$pythonVersion/python-$pythonVersion-embed-amd64.zip"
+
+          $releaseDir = Join-Path $env:RUNNER_TEMP "Agent_FX_TDR"
+          $runtimeDir = Join-Path $releaseDir "runtime"
+          $sitePackages = Join-Path $runtimeDir "Lib\site-packages"
+          $pythonZip = Join-Path $env:RUNNER_TEMP "python-embed-amd64.zip"
+
+          New-Item -ItemType Directory -Force -Path $releaseDir | Out-Null
+          New-Item -ItemType Directory -Force -Path $runtimeDir | Out-Null
+          New-Item -ItemType Directory -Force -Path $sitePackages | Out-Null
+
+          $items = @(
+            "app",
+            "data",
+            "docs",
+            "requirements.txt",
+            "INICIAR_AGENT.bat",
+            "README.md",
+            "CHANGELOG.md",
+            "VERSIO.txt",
+            "SECURITY.md"
+          )
+
+          foreach ($item in $items) {
+            Copy-Item -Path $item -Destination $releaseDir -Recurse -Force
+          }
+
+          Get-ChildItem -Path $releaseDir -Recurse -Directory -Filter "__pycache__" |
+            Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+          Get-ChildItem -Path $releaseDir -Recurse -File -Filter "*.pyc" |
+            Remove-Item -Force -ErrorAction SilentlyContinue
+
+          Write-Host "Downloading official Python embeddable runtime..."
+          Invoke-WebRequest -Uri $pythonUrl -OutFile $pythonZip
+
+          $actualHash = (Get-FileHash $pythonZip -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actualHash -ne $pythonSha256) {
+            throw "Python runtime SHA-256 mismatch. Expected $pythonSha256 but got $actualHash"
+          }
+          Write-Host "Python runtime SHA-256 verified."
+
+          Expand-Archive -Path $pythonZip -DestinationPath $runtimeDir -Force
+
+          @(
+            "python313.zip",
+            ".",
+            "Lib\site-packages",
+            "import site"
+          ) | Set-Content -Path (Join-Path $runtimeDir "python313._pth") -Encoding ASCII
+
+          Write-Host "Installing application dependencies into the portable runtime..."
+          python -m pip install --disable-pip-version-check --no-warn-script-location --target "$sitePackages" -r requirements.txt
+
+          python -m pip list --path "$sitePackages" --format=freeze |
+            Set-Content -Path (Join-Path $releaseDir "DEPENDENCIES_LOCK.txt") -Encoding UTF8
+
+          $embeddedPython = Join-Path $runtimeDir "python.exe"
+          & $embeddedPython -c "import streamlit, pandas, numpy, plotly; print('Portable FX runtime OK')"
+          if ($LASTEXITCODE -ne 0) {
+            throw "The packaged Python runtime failed its import test."
+          }
+
+          "release_dir=$releaseDir" >> $env:GITHUB_OUTPUT
+
+      - name: Run deterministic FX smoke test
+        shell: pwsh
+        run: |
+          $embeddedPython = Join-Path "${{ steps.portable.outputs.release_dir }}" "runtime\\python.exe"
+          & $embeddedPython "scripts\\smoke_fx.py"
+          if ($LASTEXITCODE -ne 0) {
+            throw "FX smoke test failed."
+          }
+
+      - name: Create portable ZIP
+        id: package
+        shell: pwsh
+        run: |
+          $version = "${{ steps.version.outputs.version_number }}"
+          $releaseDir = "${{ steps.portable.outputs.release_dir }}"
+          $zip = Join-Path $env:RUNNER_TEMP "Agent_FX_TDR_Windows_v$version.zip"
+
+          if (Test-Path $zip) {
+            Remove-Item $zip -Force
+          }
+
+          Compress-Archive -Path $releaseDir -DestinationPath $zip -CompressionLevel Optimal
+          "zip=$zip" >> $env:GITHUB_OUTPUT
+
+      - name: Install Inno Setup on build runner
+        shell: pwsh
+        run: choco install innosetup --no-progress -y
+
+      - name: Build conventional Setup.exe
+        id: installer
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $version = "${{ steps.version.outputs.version_number }}"
+          $env:APP_VERSION = $version
+          $env:SOURCE_DIR = "${{ steps.portable.outputs.release_dir }}"
+          $outputDir = Join-Path $env:RUNNER_TEMP "installer_output"
+          New-Item -ItemType Directory -Force -Path $outputDir | Out-Null
+
+          $programFiles = [Environment]::GetFolderPath("ProgramFiles")
+          $programFilesX86 = [Environment]::GetFolderPath("ProgramFilesX86")
+          $candidates = @(
+            (Join-Path $programFiles "Inno Setup 6\ISCC.exe"),
+            (Join-Path $programFilesX86 "Inno Setup 6\ISCC.exe")
+          )
+          $iscc = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $iscc) {
+            throw "ISCC.exe was not found after installing Inno Setup."
+          }
+
+          & $iscc "/O$outputDir" "build_installer.iss"
+          if ($LASTEXITCODE -ne 0) {
+            throw "Inno Setup compilation failed."
+          }
+
+          $setup = Join-Path $outputDir "Agent_FX_TDR_Setup_v$version.exe"
+          if (-not (Test-Path $setup)) {
+            throw "Expected installer was not generated: $setup"
+          }
+
+          "setup=$setup" >> $env:GITHUB_OUTPUT
+
+      - name: Create SHA-256 manifest
+        id: checksums
+        shell: pwsh
+        run: |
+          $zip = "${{ steps.package.outputs.zip }}"
+          $setup = "${{ steps.installer.outputs.setup }}"
+          $manifest = Join-Path $env:RUNNER_TEMP "SHA256SUMS.txt"
+
+          $lines = foreach ($file in @($zip, $setup)) {
+            $hash = (Get-FileHash $file -Algorithm SHA256).Hash.ToLowerInvariant()
+            "$hash  $(Split-Path $file -Leaf)"
+          }
+
+          $lines | Set-Content -Path $manifest -Encoding ASCII
+          Get-Content $manifest
+          "manifest=$manifest" >> $env:GITHUB_OUTPUT
+
+      - name: Upload workflow artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: Agent_FX_TDR_Windows_${{ steps.version.outputs.version }}
+          path: |
+            ${{ steps.package.outputs.zip }}
+            ${{ steps.installer.outputs.setup }}
+            ${{ steps.checksums.outputs.manifest }}
+          if-no-files-found: error
+
+      - name: Create or update GitHub Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = "${{ steps.version.outputs.version }}"
+          $zip = "${{ steps.package.outputs.zip }}"
+          $setup = "${{ steps.installer.outputs.setup }}"
+          $manifest = "${{ steps.checksums.outputs.manifest }}"
+
+          gh release view $tag *> $null
+          if ($LASTEXITCODE -ne 0) {
+            gh release create $tag $zip $setup $manifest --title "Academic FX Investment Simulator $tag" --generate-notes
+          } else {
+            gh release upload $tag $zip $setup $manifest --clobber
+          }
