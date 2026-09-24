@@ -1,0 +1,7 @@
+Agent FX TDR
+Versió 0.1.0 - variant experimental per a divises
+Interfície multiidioma CA/ES/EN/EU/GL
+Tipus de canvi de referència diaris del BCE + regles EMA/RSI/MACD
+Holders de divises + agents aleatoris + inversors humans
+Python portable + Streamlit + dependències incloses a la Release
+Sense trading real, sense palanquejament i sense claus API
