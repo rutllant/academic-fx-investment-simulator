@@ -1,0 +1,7 @@
+.venv/
+.install_ok
+install.log
+__pycache__/
+*.pyc
+installer_output/
+.streamlit/
