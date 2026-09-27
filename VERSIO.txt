@@ -1,7 +1,8 @@
 Agent FX TDR
-Versió 0.1.0 - variant experimental per a divises
+Versió 0.1.1 - correcció de descàrrega HTTPS del BCE
 Interfície multiidioma CA/ES/EN/EU/GL
 Tipus de canvi de referència diaris del BCE + regles EMA/RSI/MACD
+Connexió HTTPS amb magatzem de certificats del sistema + fallback CSV/ZIP
 Holders de divises + agents aleatoris + inversors humans
 Python portable + Streamlit + dependències incloses a la Release
 Sense trading real, sense palanquejament i sense claus API
