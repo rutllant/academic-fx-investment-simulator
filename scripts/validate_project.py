@@ -22,6 +22,7 @@ REQUIRED_FILES = [
     "docs/MANUAL_USUARI.md",
     "docs/USER_MANUAL_EN.md",
     "data/plantilla_inversors_humans.csv",
+    "scripts/live_ecb_smoke.py",
 ]
 
 FORBIDDEN_LEGACY_FILES = [
@@ -76,7 +77,7 @@ def main() -> None:
     print(f"OK: {len(LOCALES)} idiomes sincronitzats amb {len(reference)} claus cadascun.")
 
     requirements = (ROOT / "requirements.txt").read_text(encoding="utf-8").lower()
-    for package in ["streamlit", "pandas", "numpy", "plotly"]:
+    for package in ["streamlit", "pandas", "numpy", "plotly", "truststore", "certifi"]:
         if package not in requirements:
             fail(f"requirements.txt no inclou {package}.")
     if "ccxt" in requirements:
@@ -86,6 +87,8 @@ def main() -> None:
     engine = (ROOT / "app/engine.py").read_text(encoding="utf-8")
     if "ecb.europa.eu/stats/eurofxref/eurofxref-hist.csv" not in engine:
         fail("El motor FX no apunta a la sèrie històrica oficial del BCE.")
+    if "eurofxref-hist.zip" not in engine or "_system_https_context" not in engine:
+        fail("El motor FX no incorpora el mecanisme HTTPS resilient de la v0.1.1.")
     if "list_fx_markets" not in engine or "available_reference_currencies" not in engine:
         fail("Falten funcions bàsiques del motor FX.")
     print("OK: motor configurat per als tipus de canvi de referència del BCE.")
