@@ -5,9 +5,12 @@
 Academic FX Investment Simulator utilitza la sèrie històrica oficial dels **Euro foreign exchange reference rates** del Banc Central Europeu (BCE).
 
 - Informació institucional: https://www.ecb.europa.eu/stats/policy_and_exchange_rates/euro_reference_exchange_rates/
-- CSV històric utilitzat pel programa: https://www.ecb.europa.eu/stats/eurofxref/eurofxref-hist.csv
+- ZIP històric preferent: https://www.ecb.europa.eu/stats/eurofxref/eurofxref-hist.zip
+- CSV històric alternatiu: https://www.ecb.europa.eu/stats/eurofxref/eurofxref-hist.csv
 
 El programa no utilitza credencials ni una API privada.
+
+La v0.1.1 prova primer el ZIP històric oficial i, si falla, utilitza el CSV directe. Les Releases de Windows també executen una prova real de connexió HTTPS amb el BCE abans de publicar-se.
 
 ## Convenció de les dades del BCE
 

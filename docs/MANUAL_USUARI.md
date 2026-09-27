@@ -184,7 +184,7 @@ L'última decisió es manté fins que se'n registra una de nova.
 
 ## 17. Què no simula?
 
-La v0.1.0 no incorpora:
+La v0.1.1 no incorpora:
 
 - palanquejament;
 - posicions curtes;
@@ -225,4 +225,4 @@ Abans del test principal convé congelar i documentar:
 
 Si es canvien les regles després d'observar el resultat, cal considerar-les una nova estratègia i provar-les en un altre període.
 
-**Versió del manual:** Academic FX Investment Simulator v0.1.0.
+**Versió del manual:** Academic FX Investment Simulator v0.1.1.

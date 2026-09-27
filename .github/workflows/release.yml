@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Version to package, e.g. v0.1.0"
+        description: "Version to package, e.g. v0.1.1"
         required: true
         type: string
 
@@ -42,7 +42,7 @@ jobs:
           }
 
           if ($version -notmatch '^v\d+\.\d+\.\d+$') {
-            throw "Version must match vMAJOR.MINOR.PATCH, for example v0.1.0"
+            throw "Version must match vMAJOR.MINOR.PATCH, for example v0.1.1"
           }
 
           "version=$version" >> $env:GITHUB_OUTPUT
@@ -119,6 +119,15 @@ jobs:
           }
 
           "release_dir=$releaseDir" >> $env:GITHUB_OUTPUT
+
+      - name: Test live ECB HTTPS with packaged runtime
+        shell: pwsh
+        run: |
+          $embeddedPython = Join-Path "${{ steps.portable.outputs.release_dir }}" "runtime\\python.exe"
+          & $embeddedPython "scripts\\live_ecb_smoke.py"
+          if ($LASTEXITCODE -ne 0) {
+            throw "Live ECB connectivity test failed."
+          }
 
       - name: Run deterministic FX smoke test
         shell: pwsh

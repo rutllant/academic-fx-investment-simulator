@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.1
+- Corregida la descàrrega dels tipus de canvi del BCE a la distribució Windows portable.
+- El runtime empaquetat utilitza el magatzem de certificats HTTPS del sistema mitjançant `truststore`, amb `certifi` com a fallback.
+- El programa intenta primer el ZIP històric oficial que enllaça el web del BCE i conserva el CSV directe com a ruta alternativa.
+- Afegits reintents i missatges d'error més informatius per problemes de xarxa, antivirus o tallafoc.
+- Afegit un test de connectivitat real amb el BCE que s'executa amb el mateix Python portable abans de publicar una Release.
+- Es manté el smoke test determinista independent de la xarxa.
+
 ## 0.1.0
 - Primera versió de l'Academic FX Investment Simulator, derivada de l'arquitectura del simulador de criptomonedes.
 - Substituït CCXT pels tipus de canvi de referència diaris del Banc Central Europeu (BCE).

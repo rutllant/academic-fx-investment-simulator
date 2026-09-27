@@ -184,7 +184,7 @@ This is only a teaching example, not an investment recommendation.
 
 ## 17. What is not simulated?
 
-Version 0.1.0 does not include:
+Version 0.1.1 does not include:
 
 - leverage;
 - short selling;
@@ -225,4 +225,4 @@ Before the main test, freeze and document:
 
 If rules are changed after observing the result, treat them as a new strategy and test them on another period.
 
-**Manual version:** Academic FX Investment Simulator v0.1.0.
+**Manual version:** Academic FX Investment Simulator v0.1.1.

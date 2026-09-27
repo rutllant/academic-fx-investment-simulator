@@ -2,8 +2,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from io import BytesIO
+import ssl
+import time
 from typing import Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 from urllib.request import Request, urlopen
+from zipfile import ZipFile
 
 import numpy as np
 import pandas as pd
@@ -29,6 +32,7 @@ DEFAULT_RULES = {
 }
 
 ECB_HISTORY_URL = "https://www.ecb.europa.eu/stats/eurofxref/eurofxref-hist.csv"
+ECB_HISTORY_ZIP_URL = "https://www.ecb.europa.eu/stats/eurofxref/eurofxref-hist.zip"
 
 # Current currencies published in the ECB euro foreign-exchange reference-rate table.
 # EUR is added separately because the ECB series use EUR as the common base.
@@ -156,23 +160,116 @@ def indicators(df: pd.DataFrame, rules: Optional[Mapping[str, object]] = None) -
     return out
 
 
-def _download_ecb_history() -> pd.DataFrame:
-    """Download and parse the ECB historical euro reference-rate CSV."""
-    request = Request(
-        ECB_HISTORY_URL,
-        headers={"User-Agent": "Academic-FX-Investment-Simulator/0.1 (+educational research)"},
-    )
-    with urlopen(request, timeout=30) as response:
-        payload = response.read()
+def _system_https_context() -> ssl.SSLContext:
+    """Build an HTTPS context that works with the host operating-system trust store.
 
+    The Windows portable Python runtime does not necessarily inherit the same CA setup as
+    a normal browser. truststore makes Python use the native Windows certificate store,
+    which is also compatible with legitimate antivirus/corporate HTTPS inspection.
+    """
+    try:
+        import truststore
+
+        return truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    except Exception:
+        import certifi
+
+        return ssl.create_default_context(cafile=certifi.where())
+
+
+def _download_ecb_bytes(url: str, accept: str, retries: int = 3) -> bytes:
+    """Download an official ECB file with retries and explicit TLS trust handling."""
+    context = _system_https_context()
+    last_error: Exception | None = None
+
+    for attempt in range(max(int(retries), 1)):
+        request = Request(
+            url,
+            headers={
+                "User-Agent": (
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "Academic-FX-Investment-Simulator/0.1.1"
+                ),
+                "Accept": accept,
+                "Cache-Control": "no-cache",
+            },
+        )
+        try:
+            with urlopen(request, timeout=30, context=context) as response:
+                status = getattr(response, "status", 200)
+                if status != 200:
+                    raise RuntimeError(f"HTTP {status}")
+                payload = response.read()
+                if not payload:
+                    raise RuntimeError("resposta buida")
+                return payload
+        except Exception as exc:
+            last_error = exc
+            if attempt + 1 < retries:
+                time.sleep(1.5 * (attempt + 1))
+
+    raise RuntimeError(
+        "No s'ha pogut establir una connexió HTTPS amb el BCE. "
+        f"Detall tècnic: {last_error}"
+    )
+
+
+def _parse_ecb_csv(payload: bytes) -> pd.DataFrame:
     df = pd.read_csv(BytesIO(payload), na_values=["N/A", ""])
     df.columns = [str(c).strip() for c in df.columns]
+    if not len(df.columns) or "USD" not in df.columns:
+        raise ValueError("el fitxer descarregat no té el format esperat del BCE")
+
     date_col = "Date" if "Date" in df.columns else df.columns[0]
     df[date_col] = pd.to_datetime(df[date_col], errors="coerce")
     df = df.dropna(subset=[date_col]).set_index(date_col).sort_index()
     for col in df.columns:
         df[col] = pd.to_numeric(df[col], errors="coerce")
+
+    if df.empty:
+        raise ValueError("la sèrie històrica del BCE és buida")
     return df
+
+
+def _download_ecb_history() -> pd.DataFrame:
+    """Download and parse official ECB historical reference rates.
+
+    The ECB website currently exposes the historical time series as a ZIP download. The
+    raw CSV endpoint is retained as a fallback. Both paths use the same official domain.
+    """
+    errors: List[str] = []
+
+    try:
+        payload = _download_ecb_bytes(
+            ECB_HISTORY_ZIP_URL,
+            "application/zip,application/octet-stream;q=0.9,*/*;q=0.8",
+        )
+        with ZipFile(BytesIO(payload)) as archive:
+            members = [
+                name for name in archive.namelist()
+                if name.lower().endswith("eurofxref-hist.csv")
+            ]
+            if not members:
+                raise ValueError("el ZIP del BCE no conté eurofxref-hist.csv")
+            return _parse_ecb_csv(archive.read(members[0]))
+    except Exception as exc:
+        errors.append(f"ZIP: {exc}")
+
+    try:
+        payload = _download_ecb_bytes(
+            ECB_HISTORY_URL,
+            "text/csv,text/plain;q=0.9,*/*;q=0.8",
+        )
+        return _parse_ecb_csv(payload)
+    except Exception as exc:
+        errors.append(f"CSV: {exc}")
+
+    raise RuntimeError(
+        "No s'han pogut descarregar els tipus de canvi del BCE. "
+        "Comprova la connexió a Internet i que l'antivirus o el tallafoc no bloquegin "
+        "l'accés HTTPS a ecb.europa.eu. "
+        + " | ".join(errors)
+    )
 
 
 def _ecb_units_per_euro(history: pd.DataFrame, currency: str) -> pd.Series:
