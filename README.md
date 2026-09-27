@@ -1,4 +1,4 @@
-# Academic FX Investment Simulator · v0.1.0
+# Academic FX Investment Simulator · v0.1.1
 
 Aplicació educativa per comparar una estratègia sistemàtica sobre **divises** amb holders, agents aleatoris i inversors humans utilitzant tipus de canvi de referència diaris del Banc Central Europeu (BCE).
 
@@ -17,7 +17,7 @@ El programa compara:
 
 ## Font de dades: BCE
 
-La v0.1.0 utilitza la sèrie històrica oficial de tipus de canvi de referència de l'euro publicada pel BCE:
+La v0.1.1 utilitza la sèrie històrica oficial de tipus de canvi de referència de l'euro publicada pel BCE:
 
 `https://www.ecb.europa.eu/stats/eurofxref/eurofxref-hist.csv`
 
@@ -26,6 +26,12 @@ El BCE publica els tipus com a unitats de cada divisa per euro. El simulador der
 Per exemple, si el BCE publica USD/EUR i GBP/EUR, el programa pot calcular el valor d'una lliura en dòlars sense recórrer a una segona font.
 
 > Els tipus del BCE són tipus de referència informatius i no preus executables de trading. El simulador els utilitza perquè són una font institucional, transparent i reproduïble per a recerca acadèmica.
+
+## Connexió HTTPS amb el BCE
+
+La v0.1.1 corregeix un problema de la primera distribució Windows: el Python portable podia no disposar del mateix magatzem de certificats de confiança que el navegador. Ara el simulador utilitza el magatzem de certificats del sistema mitjançant `truststore`, amb `certifi` com a fallback.
+
+El programa intenta primer el ZIP històric oficial del BCE i conserva el CSV directe com a ruta alternativa. A més, la construcció de cada Release comprova una descàrrega real del BCE utilitzant el mateix runtime Python que rebrà l'usuari.
 
 ## Sense Forex apalancat
 
@@ -98,8 +104,8 @@ La interfície manté:
 
 La distribució està preparada per generar:
 
-- `Agent_FX_TDR_Windows_v0.1.0.zip` — versió portable;
-- `Agent_FX_TDR_Setup_v0.1.0.exe` — instal·lador Inno Setup;
+- `Agent_FX_TDR_Windows_v0.1.1.zip` — versió portable;
+- `Agent_FX_TDR_Setup_v0.1.1.exe` — instal·lador Inno Setup;
 - `SHA256SUMS.txt` — verificació d'integritat.
 
 El paquet inclou Python i les dependències; no cal instal·lar Python manualment.
